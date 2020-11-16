@@ -80,56 +80,52 @@ zplug load –verbose
 #
 # install : brew install peco
 # ------- ------- ------- ------- ------- ------- -------
-if type "peco" > /dev/null 2>&1; then
-    ## コマンド履歴候補
-    function peco-select-history() {
-        local tac
-        if which tac > /dev/null; then
-            tac="tac"
-        else
-            tac="tail -r"
-        fi
-        BUFFER=$(\history -n 1 | \
-            eval $tac | \
-            sort -k1,1nr | \
-            perl -ne 'BEGIN { my @lines = (); } s/^\s*\d+\s*//; $in=$_; if (!(grep {$in eq $_} @lines)) { push(@lines, $in); print $in; }' | \
-            peco --query "$LBUFFER")
-        CURSOR=$#BUFFER
-        zle clear-screen
-    }
-    zle -N peco-select-history
-    bindkey "^R" peco-select-history
-
-    ## SSH候補
-    function peco-ssh () {
-        ssh $(awk '
-            tolower($1)=="host" {
-                  for (i=2; i<=NF; i++) {
-                      if ($i !~ "[*?]") {
-                          print $i
-                      }
-                }
-            }
-        ' ~/.ssh/config | sort | peco)
-        zle clear-screen
-    }
-    zle -N peco-ssh
-    bindkey "^@" peco-ssh
-
-    ## ghq + peco gitリポジトリ候補
-    if type "ghq" > /dev/null 2>&1; then
-        function peco-src () {
-            local selected_dir=$(ghq list -p | peco --query "$LBUFFER")
-            if [ -n "$selected_dir" ]; then
-                BUFFER="cd ${selected_dir}"
-                zle accept-line
-            fi
-            zle clear-screen
-        }
-        zle -N peco-src
-        bindkey "^]" peco-src
+## コマンド履歴候補
+function peco-select-history() {
+    local tac
+    if which tac > /dev/null; then
+        tac="tac"
+    else
+        tac="tail -r"
     fi
-fi
+    BUFFER=$(\history -n 1 | \
+        eval $tac | \
+        sort -k1,1nr | \
+        perl -ne 'BEGIN { my @lines = (); } s/^\s*\d+\s*//; $in=$_; if (!(grep {$in eq $_} @lines)) { push(@lines, $in); print $in; }' | \
+        peco --query "$LBUFFER")
+    CURSOR=$#BUFFER
+    zle clear-screen
+}
+zle -N peco-select-history
+bindkey "^R" peco-select-history
+
+## SSH候補
+function peco-ssh () {
+    ssh $(awk '
+        tolower($1)=="host" {
+                for (i=2; i<=NF; i++) {
+                    if ($i !~ "[*?]") {
+                        print $i
+                    }
+            }
+        }
+    ' ~/.ssh/config | sort | peco)
+    zle clear-screen
+}
+zle -N peco-ssh
+bindkey "^@" peco-ssh
+
+## ghq + peco gitリポジトリ候補
+function peco-src () {
+    local selected_dir=$(ghq list -p | peco --query "$LBUFFER")
+    if [ -n "$selected_dir" ]; then
+        BUFFER="cd ${selected_dir}"
+        zle accept-line
+    fi
+    zle clear-screen
+}
+zle -N peco-src
+bindkey "^]" peco-src
 
 # zsh prompt that displays information about the current git repository
 # ------- ------- ------- ------- ------- ------- -------
@@ -164,17 +160,43 @@ if type "git" > /dev/null 2>&1; then
 %# '
 fi
 
-# tab color
+# ls color
 # ------- ------- ------- ------- ------- ------- -------
-tab-color(){
-  echo -ne "\033]6;1;bg;red;brightness;$1\a"
-  echo -ne "\033]6;1;bg;green;brightness;$2\a"
-  echo -ne "\033]6;1;bg;blue;brightness;$3\a"
+chpwd() {
+    ls_abbrev
 }
-tab-reset(){
-  echo -ne "\033]6;1;bg;*;default\a"
+ls_abbrev() {
+    # -a : Do not ignore entries starting with ..
+    # -C : Force multi-column output.
+    # -F : Append indicator (one of */=>@|) to entries.
+    local cmd_ls='ls'
+    local -a opt_ls
+    opt_ls=('-aCF' '--color=always')
+    case "${OSTYPE}" in
+        freebsd*|darwin*)
+            if type gls > /dev/null 2>&1; then
+                cmd_ls='gls'
+            else
+                # -G : Enable colorized output.
+                opt_ls=('-aCFG')
+            fi
+            ;;
+    esac
+
+    local ls_result
+    ls_result=$(CLICOLOR_FORCE=1 COLUMNS=$COLUMNS command $cmd_ls ${opt_ls[@]} | sed $'/^\e\[[0-9;]*m$/d')
+
+    local ls_lines=$(echo "$ls_result" | wc -l | tr -d ' ')
+
+    if [ $ls_lines -gt 10 ]; then
+        echo "$ls_result" | head -n 5
+        echo '...'
+        echo "$ls_result" | tail -n 5
+        echo "$(command ls -1 -A | wc -l | tr -d ' ') files exist"
+    else
+        echo "$ls_result"
+    fi
 }
-function chpwd() { ls; echo -ne "\033]0;$(pwd | rev | awk -F \/ '{print "/"$1"/"$2}'| rev)\007" }
 
 
 # エイリアス
@@ -184,7 +206,6 @@ alias ls="ls -laFG"
 
 if type "vim" > /dev/null 2>&1; then
     alias vz="vim ~/.zshrc"
-    alias vim='tab-color 134 200 0; vim; tab-reset'
 else
     alias vz="vi ~/.zshrc"
 fi
@@ -212,17 +233,17 @@ if [ -w ~/.pythonrc.py -o -w ~ ]; then
     export PYTHONSTARTUP=~/.pythonrc.py
 fi
 
+export PYENV_ROOT="$HOME/.pyenv"
+export PATH="$PYENV_ROOT/bin:$PATH"
 if [ -d ~/.pyenv ] && type "pyenv" > /dev/null 2>&1; then
-    export PYENV_ROOT="$HOME/.pyenv"
-    export PATH="$PYENV_ROOT/bin:$PATH"
     eval "$(pyenv init -)"
     if which pyenv-virtualenv-init > /dev/null; then eval "$(pyenv virtualenv-init -)"; fi
 fi
 
 # brew
 # ------- ------- ------- ------- ------- ------- -------
+export PATH=$HOME/.homebrew/bin:$PATH
 if type "brew" > /dev/null 2>&1; then
-  export PATH=$HOME/.homebrew/bin:$PATH
   export HOMEBREW_CACHE=$HOME/.homebrew/caches
 fi
 
